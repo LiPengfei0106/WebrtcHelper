@@ -62,16 +62,16 @@ class MainActivity : AppCompatActivity() {
         val swMirrorVertically = findViewById<SwitchCompat>(R.id.swMirrorVertically)
 
         btnScaleFit.setOnClickListener {
-            localSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_FIT)
-            remoteSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_FIT)
+            localSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_FIT
+            remoteSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_FIT
         }
         btnScaleFill.setOnClickListener {
-            localSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_FILL)
-            remoteSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_FILL)
+            localSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_FILL
+            remoteSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_FILL
         }
         btnScaleCrop.setOnClickListener {
-            localSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_CROP)
-            remoteSurface.setScalingType(VideoTrackView.ScalingType.SCALE_ASPECT_CROP)
+            localSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_CROP
+            remoteSurface.scalingType = VideoTrackView.ScalingType.SCALE_ASPECT_CROP
         }
 
         swMirror.setOnCheckedChangeListener { buttonView, isChecked ->

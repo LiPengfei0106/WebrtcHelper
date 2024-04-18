@@ -57,8 +57,8 @@ class PeerConnectionHelper(
         return scope.launch(block = block)
     }
 
-    var onAudioConnected: (audioTrack: AudioTrack?) -> Unit = { _ -> }
-    var onVideoConnected: (videoTrack: VideoTrack?) -> Unit = { _ -> }
+    var onAudioConnected: (audioTrack: AudioTrack) -> Unit = { _ -> }
+    var onVideoConnected: (videoTrack: VideoTrack) -> Unit = { _ -> }
     var onConnectFailed: () -> Unit = { }
     var onConnected: () -> Unit = { }
     var onDisconnected: () -> Unit = { }

@@ -33,7 +33,7 @@ object WebRTCHelper {
 
     val rootEglBaseContext: EglBase.Context = rootEglBase.eglBaseContext
 
-    val pchMap: ConcurrentHashMap<String, PeerConnectionHelper> = ConcurrentHashMap()
+    private val pchMap: ConcurrentHashMap<String, PeerConnectionHelper> = ConcurrentHashMap()
 
     var minBitrate: Int = 1000000
     var curBitrate: Int = 2000000
@@ -41,6 +41,9 @@ object WebRTCHelper {
 
     private lateinit var handler: Handler
 
+    /**
+     * 初始化，在合适的地方调用
+     */
     fun init(context: Context) {
         appContext = context.applicationContext
         handler = Handler(Looper.getMainLooper())
@@ -80,6 +83,9 @@ object WebRTCHelper {
             }
     }
 
+    /**
+     * 开启日志
+     */
     fun enableLog(enable: Boolean) {
         if (enable) {
             Logging.enableLogToDebugOutput(Logging.Severity.LS_INFO)
@@ -109,31 +115,45 @@ object WebRTCHelper {
 
     }
 
+    /**
+     * 给流的连接设置ICE信息
+     */
     fun addIceCandidate(
         streamId: String,
         iceJsonStr: String
     ) {
-        L.i("addIceCandidate: $streamId, $iceJsonStr")
-        pchMap[streamId]?.let {
-            val ice = JSONObject(iceJsonStr)
-            it.addIceCandidate(
-                IceCandidate(
-                    ice.optString("sdpMid"),
-                    ice.optInt("sdpMLineIndex"),
-                    ice.optString("candidate"),
-                )
-            )
+        if (iceJsonStr.isNotBlank()) {
+            L.i("addIceCandidate: $streamId, $iceJsonStr")
+            pchMap[streamId]?.let {
+                try {
+                    val ice = JSONObject(iceJsonStr)
+                    it.addIceCandidate(
+                        IceCandidate(
+                            ice.optString("sdpMid"),
+                            ice.optInt("sdpMLineIndex"),
+                            ice.optString("candidate"),
+                        )
+                    )
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 
     /**
-     * WHIP 推流， 推流给WHIP服务器，local -> server
+     * 推流， 可用于推流给WHIP服务器，local -> server
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     * @param videoTrack 可通过[VideoSourceHelper]获取
+     * @param audioTrack 可通过[AudioSourceHelper]获取
+     * @param onSdp 生成SdpOffer回调，需要返回SdpAnswer； offer中包含ice信息，可直接用于推流给whip服务器并获取服务器返回的sdpAnswer。 (sdpOffer) -> sdpAnswer
+     * @param onIce 生成ice消息回调, 当回调信息为空白字符串时表示ice生成完毕 (iceString) -> Unit
+     * @param onDisconnect 连接断开回调
      */
     suspend fun pushStream(
         streamId: String,
         videoTrack: VideoTrack?,
         audioTrack: AudioTrack?,
-        onSdpAnswer: suspend (String) -> String,
+        onSdp: suspend (String) -> String,
         onIce: (String) -> Unit = {},
         onDisconnect: () -> Unit
     ) {
@@ -163,6 +183,7 @@ object WebRTCHelper {
         val iceSdp = StringBuilder()
         val iceList = suspendCoroutine { cont ->
             pch.onIceComplete = {
+                onIce("")
                 cont.resume(it)
             }
         }
@@ -171,12 +192,19 @@ object WebRTCHelper {
             iceSdp.append(it.sdp)
             iceSdp.append("\n")
         }
-        val sdpAnswer = onSdpAnswer.invoke("${sdpoffer.description}${iceSdp}")
+        val sdpAnswer = onSdp.invoke("${sdpoffer.description}${iceSdp}")
         pch.setRemoteDescriptionAnswer(sdpAnswer)
     }
 
     /**
-     * WHEP 推流， 推流给WHEP客户端，local -> client
+     * 推流， 可用于推流给WHEP客户端，local -> server
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     * @param videoTrack 可通过[VideoSourceHelper]获取
+     * @param audioTrack 可通过[AudioSourceHelper]获取
+     * @param sdpOffer 发起请求的sdpOffer信息
+     * @param onIce 生成ice消息回调, 当回调信息为空白字符串时表示ice生成完毕 (iceString) -> Unit
+     * @param onDisconnect 连接断开回调
+     * @return 返回生成的sdpAnswer
      */
     suspend fun pushStream(
         streamId: String,
@@ -186,7 +214,7 @@ object WebRTCHelper {
         onIce: (String) -> Unit = {},
         onDisconnect: () -> Unit,
     ): String {
-        L.d("pushStream $streamId: \n$sdpOffer")
+        L.d("pushStream $streamId \n$sdpOffer")
         pchMap[streamId]?.dispose()
         if (videoTrack == null && audioTrack == null) throw IllegalArgumentException("video and audio both null")
         val pch = PeerConnectionHelper(streamId)
@@ -214,6 +242,7 @@ object WebRTCHelper {
         val iceSdp = StringBuilder()
         val iceList = suspendCoroutine { cont ->
             pch.onIceComplete = {
+                onIce("")
                 cont.resume(it)
             }
         }
@@ -226,13 +255,19 @@ object WebRTCHelper {
     }
 
     /**
-     * WHEP 拉流， 从WHEP服务器拉流 server -> local
+     * 拉流， 可用于从WHEP服务器拉流，local -> server
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     * @param onSdp 生成SdpOffer回调，需要返回SdpAnswer； offer中包含ice信息，可直接用于推流给whip服务器并获取服务器返回的sdpAnswer。 (sdpOffer) -> sdpAnswer
+     * @param onAudioConnected 远端音频连接成功
+     * @param onVideoConnected 远端视频连接成功，可以开始预览远端画面
+     * @param onIce 生成ice消息回调, 当回调信息为空白字符串时表示ice生成完毕 (iceString) -> Unit
+     * @param onDisconnect 连接断开回调
      */
     suspend fun pullStream(
         streamId: String,
-        onSdpAnswer: suspend (String) -> String,
-        onAudioConnected: (audioTrack: AudioTrack?) -> Unit,
-        onVideoConnected: (audioTrack: VideoTrack?) -> Unit,
+        onSdp: suspend (String) -> String,
+        onAudioConnected: (audioTrack: AudioTrack) -> Unit,
+        onVideoConnected: (audioTrack: VideoTrack) -> Unit,
         onIce: (String) -> Unit = {},
         onDisconnect: () -> Unit,
     ) {
@@ -256,21 +291,31 @@ object WebRTCHelper {
                 put("candidate", it.sdp)
             }.toString())
         }
+        pch.onIceComplete = {
+            onIce("")
+        }
         pch.onAudioConnected = onAudioConnected
         pch.onVideoConnected = onVideoConnected
         val sdpoffer = pch.createOffer(PeerConnectionHelper.TYPE_RECEVIEONLY)
-        val sdpAnswer = onSdpAnswer.invoke(sdpoffer.description)
+        val sdpAnswer = onSdp.invoke(sdpoffer.description)
         pch.setRemoteDescriptionAnswer(sdpAnswer)
     }
 
     /**
      * WHIP 拉流， 获取WHIP客户端推的流 client -> local
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     * @param sdpOffer 发起请求的sdpOffer信息
+     * @param onAudioConnected 远端音频连接成功
+     * @param onVideoConnected 远端视频连接成功，可以开始预览远端画面
+     * @param onIce 生成ice消息回调, 当回调信息为空白字符串时表示ice生成完毕 (iceString) -> Unit
+     * @param onDisconnect 连接断开回调
+     * @return 返回生成的sdpAnswer
      */
     suspend fun pullStream(
         streamId: String,
         sdpOffer: String,
-        onAudioConnected: (audioTrack: AudioTrack?) -> Unit,
-        onVideoConnected: (audioTrack: VideoTrack?) -> Unit,
+        onAudioConnected: (audioTrack: AudioTrack) -> Unit,
+        onVideoConnected: (audioTrack: VideoTrack) -> Unit,
         onIce: (String) -> Unit = {},
         onDisconnect: () -> Unit,
     ): String {
@@ -294,6 +339,9 @@ object WebRTCHelper {
                 put("candidate", it.sdp)
             }.toString())
         }
+        pch.onIceComplete = {
+            onIce("")
+        }
         pch.onAudioConnected = onAudioConnected
         pch.onVideoConnected = onVideoConnected
 
@@ -301,10 +349,17 @@ object WebRTCHelper {
         return pch.createAnswer(PeerConnectionHelper.TYPE_RECEVIEONLY).description
     }
 
-    fun releaseConnection(connectId: String) {
-        pchMap.remove(connectId)?.dispose()
+    /**
+     * 释放连接
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     */
+    fun releaseConnection(streamId: String) {
+        pchMap.remove(streamId)?.dispose()
     }
 
+    /**
+     * 释放所有连接
+     */
     fun releaseAllConnection() {
         pchMap.values.forEach {
             it.dispose()
@@ -312,16 +367,23 @@ object WebRTCHelper {
         pchMap.clear()
     }
 
-
-    fun getAudioStats(connectId: String): AudioStats? {
-        return pchMap[connectId]?.let {
+    /**
+     * 获取音频推流状态，调用时才会去获取，因为获取的过程是异步的，所以返回的是上一次调用本方法时的状态
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     */
+    fun getAudioStats(streamId: String): AudioStats? {
+        return pchMap[streamId]?.let {
             it.updateAudioStats()
             it.audioStats.copy()
         }
     }
 
-    fun getVideoStats(connectId: String): VideoStats? {
-        return pchMap[connectId]?.let {
+    /**
+     * 获取视频推流状态，调用时才会去获取，因为获取的过程是异步的，所以返回的是上一次调用本方法时的状态
+     * @param streamId 自定义流的唯一ID，用于区分每个连接
+     */
+    fun getVideoStats(streamId: String): VideoStats? {
+        return pchMap[streamId]?.let {
             it.updateVideoStats()
             it.videoStats.copy()
         }

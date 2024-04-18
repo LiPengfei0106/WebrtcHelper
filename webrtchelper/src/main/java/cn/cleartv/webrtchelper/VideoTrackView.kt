@@ -11,6 +11,7 @@ import org.webrtc.EglBase
 import org.webrtc.EglRenderer
 import org.webrtc.GlRectDrawer
 import org.webrtc.RendererCommon
+import org.webrtc.RendererCommon.GlDrawer
 import org.webrtc.ThreadUtils
 import org.webrtc.VideoFrame
 import org.webrtc.VideoSink
@@ -20,16 +21,21 @@ import java.util.concurrent.CountDownLatch
 
 class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
     SurfaceHolder.Callback {
-    private var eglRenderer: EglRenderer? = null
+    private val eglRenderer: EglRenderer by lazy { EglRenderer(resources.getResourceEntryName(id)) }
 
-    //    private var surfaceView: SurfaceView? = null
-    private val videoSink: VideoSink = VideoSink { frame ->
-        updateFrameDimensionsAndReportEvents(frame)
-        eglRenderer?.onFrame(frame)
+    private val videoSink: VideoSink by lazy {
+        VideoSink { frame ->
+            updateFrameDimensionsAndReportEvents(frame)
+            eglRenderer.onFrame(frame)
+        }
     }
 
     private var videoTrack: VideoTrack? = null
-    private var rendererEvents: RendererCommon.RendererEvents? = null
+
+    /**
+     * 监听渲染事件
+     */
+    var rendererEvents: RendererCommon.RendererEvents? = null
 
     private val layoutLock = Any()
     private var isRenderingPaused = false
@@ -37,7 +43,7 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
     private var rotatedFrameWidth = 0
     private var rotatedFrameHeight = 0
     private var frameRotation = 0
-    private var surfaceView: SurfaceView?
+    private var surfaceView: SurfaceView
     private val surfaceViewId: Int = R.id.video_track_view_surfaceview
 
 
@@ -48,13 +54,11 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
         attrs,
         defStyleAttr
     ) {
-        eglRenderer = EglRenderer(resources.getResourceEntryName(id))
-        val surfaceView = SurfaceView(context)
+        surfaceView = SurfaceView(context)
         surfaceView.id = surfaceViewId
-        this.surfaceView = surfaceView
         surfaceView.holder.addCallback(this)
         if (surfaceView.holder.surface.isValid) {
-            eglRenderer?.createEglSurface(surfaceView.holder.surface)
+            eglRenderer.createEglSurface(surfaceView.holder.surface)
         }
         addView(surfaceView)
         val constraintSet = ConstraintSet()
@@ -90,7 +94,7 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        eglRenderer?.init(
+        eglRenderer.init(
             WebRTCHelper.rootEglBaseContext,
             EglBase.CONFIG_PLAIN,
             GlRectDrawer()
@@ -103,90 +107,105 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
         release()
     }
 
-//    fun bindSurfaceView(surfaceView: SurfaceView) {
-//        release()
-//        ThreadUtils.checkIsOnMainThread()
-//        this.surfaceView = surfaceView
-//        eglRenderer = EglRenderer(surfaceView.resources.getResourceEntryName(surfaceView.id))
-//        eglRenderer?.init(
-//            WebRTCHelper.rootEglBaseContext,
-//            EglBase.CONFIG_PLAIN,
-//            GlRectDrawer()
-//        )
-//        surfaceView.holder.addCallback(this)
-//        if (surfaceView.holder.surface.isValid) {
-//            eglRenderer?.createEglSurface(surfaceView.holder.surface)
-//        }
-//    }
-
-    fun release() {
+    private fun release() {
         ThreadUtils.checkIsOnMainThread()
         videoTrack?.removeSink(videoSink)
-        surfaceView?.holder?.removeCallback(this)
-        surfaceView = null
-        eglRenderer?.release()
-        eglRenderer = null
+        eglRenderer.release()
     }
 
+    /**
+     * 水平镜像
+     */
     fun setMirror(mirror: Boolean) {
-        eglRenderer?.setMirror(mirror)
+        eglRenderer.setMirror(mirror)
     }
 
+    /**
+     * 竖直镜像
+     */
     fun setMirrorVertically(mirror: Boolean) {
-        eglRenderer?.setMirrorVertically(mirror)
+        eglRenderer.setMirrorVertically(mirror)
     }
 
+    /**
+     * 预览videoTrack
+     */
     fun showVideoTrack(videoTrack: VideoTrack?) {
         ThreadUtils.checkIsOnMainThread()
         if (this.videoTrack != videoTrack) {
             this.videoTrack?.removeSink(videoSink)
-            eglRenderer?.clearImage()
+            eglRenderer.clearImage()
         }
         videoTrack?.addSink(videoSink)
         this.videoTrack = videoTrack
+    }
+
+    fun addFrameListener(
+        listener: EglRenderer.FrameListener,
+        scale: Float,
+        drawerParam: GlDrawer?
+    ) {
+        eglRenderer.addFrameListener(listener, scale, drawerParam)
+    }
+
+    fun addFrameListener(listener: EglRenderer.FrameListener, scale: Float) {
+        eglRenderer.addFrameListener(listener, scale)
+    }
+
+    fun removeFrameListener(listener: EglRenderer.FrameListener) {
+        eglRenderer.removeFrameListener(listener)
     }
 
     override fun onFirstFrameRendered() {
         rendererEvents?.onFirstFrameRendered()
     }
 
-    enum class ScalingType constructor(val value: Int) {
+
+    /**
+     *
+     * @property SCALE_ASPECT_FIT 相当于 fit_center，缩放居中完整显示，会有黑边
+     * @property SCALE_ASPECT_FILL 相当于 fit_xy，拉伸铺满整个view
+     * @property SCALE_ASPECT_CROP 相当于 center_crop，缩放铺满view并居中裁剪
+     */
+    enum class ScalingType(val value: Int) {
         SCALE_ASPECT_FIT(0), SCALE_ASPECT_FILL(1), SCALE_ASPECT_CROP(2);
     }
 
-    var curScalingType: ScalingType = ScalingType.SCALE_ASPECT_FIT
-        private set
-
-    fun setScalingType(scaleAspectFit: ScalingType) {
-        if (curScalingType == scaleAspectFit) return
-        curScalingType = scaleAspectFit
-        updateSurfaceViewSize()
-    }
+    /**
+     * 设置缩放类型
+     */
+    var scalingType: ScalingType = ScalingType.SCALE_ASPECT_FIT
+        set(value) {
+            if (value != field) {
+                field = value
+                updateSurfaceViewSize()
+            }
+        }
 
     private fun updateSurfaceViewSize() {
         ThreadUtils.checkIsOnMainThread()
         val constraintSet = ConstraintSet()
         constraintSet.clone(this)
-        when (curScalingType) {
+        when (scalingType) {
             ScalingType.SCALE_ASPECT_FIT -> {
                 constraintSet.setDimensionRatio(
                     surfaceViewId,
                     "$rotatedFrameWidth:$rotatedFrameHeight"
                 )
                 val frameAspectRatio = rotatedFrameWidth.toFloat() / rotatedFrameHeight.toFloat()
-                eglRenderer?.setLayoutAspectRatio(frameAspectRatio)
+                eglRenderer.setLayoutAspectRatio(frameAspectRatio)
             }
 
             ScalingType.SCALE_ASPECT_FILL -> {
                 constraintSet.setDimensionRatio(surfaceViewId, null)
                 val frameAspectRatio = rotatedFrameWidth.toFloat() / rotatedFrameHeight.toFloat()
-                eglRenderer?.setLayoutAspectRatio(frameAspectRatio)
+                eglRenderer.setLayoutAspectRatio(frameAspectRatio)
             }
 
             ScalingType.SCALE_ASPECT_CROP -> {
                 constraintSet.setDimensionRatio(surfaceViewId, null)
                 val layoutAspectRatio = this.width.toFloat() / this.height.toFloat()
-                eglRenderer?.setLayoutAspectRatio(layoutAspectRatio)
+                eglRenderer.setLayoutAspectRatio(layoutAspectRatio)
             }
         }
         constraintSet.applyTo(this)
@@ -205,7 +224,7 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        eglRenderer?.createEglSurface(holder.surface)
+        eglRenderer.createEglSurface(holder.surface)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -216,23 +235,23 @@ class VideoTrackView : ConstraintLayout, RendererCommon.RendererEvents,
         ThreadUtils.checkIsOnMainThread()
         val completionLatch = CountDownLatch(1)
         Objects.requireNonNull(completionLatch)
-        eglRenderer?.releaseEglSurface { completionLatch.countDown() }
+        eglRenderer.releaseEglSurface { completionLatch.countDown() }
         ThreadUtils.awaitUninterruptibly(completionLatch)
     }
 
     fun setFpsReduction(fps: Float) {
         synchronized(layoutLock) { isRenderingPaused = fps == 0.0f }
-        eglRenderer?.setFpsReduction(fps)
+        eglRenderer.setFpsReduction(fps)
     }
 
     fun disableFpsReduction() {
         synchronized(layoutLock) { isRenderingPaused = false }
-        eglRenderer?.disableFpsReduction()
+        eglRenderer.disableFpsReduction()
     }
 
     fun pauseVideo() {
         synchronized(layoutLock) { isRenderingPaused = true }
-        eglRenderer?.pauseVideo()
+        eglRenderer.pauseVideo()
     }
 
     private fun updateFrameDimensionsAndReportEvents(frame: VideoFrame) {

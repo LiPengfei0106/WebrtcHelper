@@ -13,44 +13,35 @@ import kotlinx.coroutines.withContext
 
 class MainViewModel : ViewModel() {
 
-    //    val localVideoTrackView: VideoTrackView by lazy { VideoTrackView() }
-//    val remoteVideoTrackView: VideoTrackView by lazy { VideoTrackView() }
     val videoSourceHelper: VideoSourceHelper by lazy { VideoSourceHelper().apply { initCameraCapturer() } }
     val audioSourceHelper: AudioSourceHelper by lazy { AudioSourceHelper() }
 
     override fun onCleared() {
         super.onCleared()
         WebRTCHelper.releaseAllConnection()
+        videoSourceHelper.release()
+        audioSourceHelper.release()
     }
 
     /**
      * 本地测试，推流端发起。
      */
     fun localTestPushStart(localSurfaceView: VideoTrackView, remoteSurfaceView: VideoTrackView) {
-        Log.i("LPF", "releaseConnection")
         WebRTCHelper.releaseAllConnection()
-//        Log.i("LPF", "bindSurfaceView")
-//        localVideoTrackView.bindSurfaceView(localSurfaceView)
-//        remoteVideoTrackView.bindSurfaceView(remoteSurfaceView)
         viewModelScope.launch {
-            Log.i("LPF", "getOrCreateVideoTrack")
             val videoTrack = videoSourceHelper.getOrCreateVideoTrack("localVideo", false)
             val audioTrack = audioSourceHelper.getOrCreateAudioTrack("localAudio")
             if (!videoSourceHelper.isCapturerStarted) {
-                Log.i("LPF", "startCapture")
                 videoSourceHelper.startCapture(1920, 1080, 30)
             }
-            Log.i("LPF", "showVideoTrack")
             localSurfaceView.showVideoTrack(videoTrack)
-            Log.i("LPF", "pushStream")
             // 推流
             WebRTCHelper.pushStream(
                 "pushStartTestPusher",
                 videoTrack,
                 audioTrack,
-                onSdpAnswer = { sdpOffer ->
+                onSdp = { sdpOffer ->
                     // 拉流
-                    Log.i("LPF", "pullStream")
                     val sdpAnswer = WebRTCHelper.pullStream(
                         "pushStartTestPuller",
                         sdpOffer,
@@ -91,7 +82,7 @@ class MainViewModel : ViewModel() {
             // 拉流
             WebRTCHelper.pullStream(
                 "pullStartTestPuller",
-                onSdpAnswer = { sdpOffer ->
+                onSdp = { sdpOffer ->
                     // 推流
                     val sdpAnswer = withContext(Dispatchers.Main) {
                         val videoTrack =
