@@ -119,5 +119,5 @@ AudioDeviceManager.setPreferredInputAudioDevice() //设置优先使用的音频�
 
 ### 演示画面
 
-![演示画面](./screenshort/Record_2024-04-18-18-59-16.gif")
+![演示画面](screenshort/Record_2024-04-18-18-59-16.gif)
 
