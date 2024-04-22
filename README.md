@@ -1,5 +1,26 @@
 # WebrtcHelper
+
+[![](https://jitpack.io/v/LiPengfei0106/WebrtcHelper.svg)](https://jitpack.io/#LiPengfei0106/WebrtcHelper)
+
 使用kotlin和协程简化Android端WebRTC的使用流程:
+
+## 引入
+Add it in your root build.gradle at the end of repositories:
+```kotlin
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+```
+Add the dependency
+```kotlin
+dependencies {
+    implementation 'com.github.LiPengfei0106:WebrtcHelper:1.0.0'
+}
+```
 
 ## WebrtcHelper
 ```kotlin
