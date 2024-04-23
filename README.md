@@ -1,6 +1,6 @@
 # WebrtcHelper
 
-[![](https://jitpack.io/v/LiPengfei0106/WebrtcHelper.svg)](https://jitpack.io/#LiPengfei0106/WebrtcHelper)
+[![](https://jitpack.io/v/LiPengfei0106/AndroidServer.svg)](https://jitpack.io/#LiPengfei0106/AndroidServer)
 
 使用kotlin和协程简化Android端WebRTC的使用流程:
 
@@ -18,7 +18,7 @@ dependencyResolutionManagement {
 Add the dependency
 ```kotlin
 dependencies {
-    implementation 'com.github.LiPengfei0106:WebrtcHelper:1.0.0'
+    implementation 'com.github.LiPengfei0106:AndroidServer:1.0.0'
 }
 ```
 
